@@ -20,6 +20,7 @@ import {
 	LinearMipmapLinearFilter,
 	Loader,
 	LoaderUtils,
+	LoopOnce,
 	Mesh,
 	MeshBasicMaterial,
 	MeshLambertMaterial,
@@ -2744,6 +2745,9 @@ class SequenceManager {
 		this._externalSequences = new Map();
 		this._externalSequencesInitialized = new Map();
 
+		this._currentActions = [];
+		this._currentActionsPending = 0;
+
 		// setup maps
 
 		for ( let i = 0; i < sequences.length; i ++ ) {
@@ -2782,7 +2786,9 @@ class SequenceManager {
 
 		if ( this._mixers.has( root ) === false ) {
 
-			this._mixers.set( root, new AnimationMixer( root ) );
+			const mixer = new AnimationMixer( root );
+			mixer.addEventListener('finished', this.onMixerFinished.bind(this) );
+			this._mixers.set( root, mixer );
 
 		}
 
@@ -2823,6 +2829,9 @@ class SequenceManager {
 
 		const key = computeSequenceKey( id, variationIndex );
 
+		this._currentActions = [];
+		this._currentActionsPending = 0;
+
 		const sequence = this._sequenceMap.get( key );
 
 		for ( const animation of sequence ) {
@@ -2832,7 +2841,10 @@ class SequenceManager {
 			if ( animation.flags & M2_SEQUENCE_EMBEDDED_DATA ) {
 
 				const action = mixer.clipAction( animation.clip );
-				action.play();
+				console.log(animation.clip.duration);
+				action.setLoop(LoopOnce, 1);
+				action.clampWhenFinished = true;
+				this._currentActions.push( action );
 
 			} else {
 
@@ -2882,6 +2894,24 @@ class SequenceManager {
 
 		}
 
+		this.restartAllActions();
+
+	}
+	
+	onMixerFinished(e) {
+		this._currentActionsPending--;
+		if (this._currentActionsPending <= 0){
+			this.restartAllActions();
+		}
+		
+	}
+	
+	restartAllActions() {
+		this._currentActions.forEach(action => {
+			action.reset();
+			this._currentActionsPending++;
+			action.play();
+		});
 	}
 
 	stopSequence( id, variationIndex = 0 ) {
